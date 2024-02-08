@@ -159,12 +159,14 @@ public:
 
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
-        sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
 
+        sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
+        //thisImu.header.stamp = ros::Time::now();
         std::lock_guard<std::mutex> lock1(imuLock);
         imuQueue.push_back(thisImu);
 
-        // debug IMU data
+
+        //debug IMU data
         // cout << std::setprecision(6);
         // cout << "IMU acc: " << endl;
         // cout << "x: " << thisImu.linear_acceleration.x << 
@@ -190,21 +192,30 @@ public:
 
     void cloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
+        //cloudHeader = laserCloudMsg->header;
+        //cloudHeader.stamp = ros::Time::now();
         if (!cachePointCloud(laserCloudMsg))
+        {   
+            //printf("cachePointCloud failed\n");
             return;
-
+        }
         if (!deskewInfo())
+        {
+            //printf("deskewInfo failed\n");
             return;
+        }
 
+      
         projectPointCloud();
-
+  
         publishClouds();
 
         resetParameters();
     }
 
     bool cachePointCloud(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
-    {
+    {   
+
         // cache point cloud
         cloudQueue.push_back(*laserCloudMsg);
         if (cloudQueue.size() <= 2)
@@ -220,6 +231,7 @@ public:
         else if (sensor == SensorType::OUSTER)
         {
             // Convert to Velodyne format
+
             pcl::moveFromROSMsg(currentCloudMsg, *tmpOusterCloudIn);
             laserCloudIn->points.resize(tmpOusterCloudIn->size());
             laserCloudIn->is_dense = tmpOusterCloudIn->is_dense;
@@ -279,7 +291,7 @@ public:
 
         // get timestamp
         cloudHeader = currentCloudMsg.header;
-        timeScanCur = cloudHeader.stamp.toSec();
+        timeScanCur = cloudHeader.stamp.toSec(); //- 1614685306.75
         timeScanEnd = timeScanCur + laserCloudIn->points.back().time;
 
         // check dense flag
@@ -333,6 +345,12 @@ public:
         std::lock_guard<std::mutex> lock1(imuLock);
         std::lock_guard<std::mutex> lock2(odoLock);
 
+        
+        cout << "front imu time: " << imuQueue.front().header.stamp << endl;
+        cout << "back imu time: " << imuQueue.back().header.stamp << endl;
+        printf("timeScanCur: %lf\n", timeScanCur);
+        printf("timeScanEnd: %lf\n", timeScanEnd);
+
         // make sure IMU data available for the scan
         if (imuQueue.empty() || imuQueue.front().header.stamp.toSec() > timeScanCur || imuQueue.back().header.stamp.toSec() < timeScanEnd)
         {
@@ -350,6 +368,9 @@ public:
     void imuDeskewInfo()
     {
         cloudInfo.imuAvailable = false;
+        printf("Imu time sec: %f\n" ,imuQueue.front().header.stamp.toSec());
+        printf("Imu time: %f\n" ,imuQueue.front().header.stamp);
+        
 
         while (!imuQueue.empty())
         {
